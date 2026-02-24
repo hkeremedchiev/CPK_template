@@ -63,8 +63,32 @@ server <- function(input, output) {
     # Add row names
     row.names(avg_row) <- "Average"
     
-    # Combine both calculations with original data
-    rbind(stdev_row, avg_row, df)
+    # Calculate CPK low: (Average - LowLimit) / (St Dev * 3)
+    # LowLimit is in row 2 (df[2, ])
+    cpk_low_row <- data.frame(
+      V1 = NA,  # TimeStamp
+      V2 = NA,  # Serial Num
+      mapply(function(low_limit, avg_val, stdev_val) {
+        if (is.na(avg_val) || is.na(stdev_val) || is.na(low_limit)) {
+          return(NA)
+        }
+        low_limit_num <- as.numeric(low_limit)
+        if (is.na(low_limit_num) || stdev_val == 0) {
+          return(NA)
+        }
+        round((avg_val - low_limit_num) / (stdev_val * 3), 5)
+      },
+      as.list(df[2, 3:ncol(df)]),
+      avg_row[, 3:ncol(avg_row)],
+      stdev_row[, 3:ncol(stdev_row)],
+      SIMPLIFY = FALSE)
+    )
+    
+    # Add row names
+    row.names(cpk_low_row) <- "CPK low"
+    
+    # Combine all calculations with original data
+    rbind(cpk_low_row, stdev_row, avg_row, df)
   })
   
   output$table <- renderDT({
