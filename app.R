@@ -1,6 +1,12 @@
 library(shiny)
 library(DT)
 
+#TODO: fix the Excel download button
+#TODO: add functionality to limit number of measurements to 50 for Gm
+#TODO: add plots for each parameter on demand with button?
+#TODO: delete colomn 87 at the end //visual bug?//
+#TODO: make the app stand alone
+
 ui <- fluidPage(
   titlePanel("CSV File Viewer - Frozen Columns & Custom Headers"),
   
@@ -126,7 +132,7 @@ server <- function(input, output) {
             exportOptions = list(modifier = list(page = 'all')) # Exports all pages, not just the visible 10
           )
         ),
-        pageLength = 20,
+        pageLength = 100,
         scrollX = TRUE,
         scrollY = "600px",
         scrollCollapse = TRUE,
