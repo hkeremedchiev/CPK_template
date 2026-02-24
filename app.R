@@ -111,9 +111,30 @@ server <- function(input, output) {
     # Add row names
     row.names(cpk_high_row) <- "CPK high"
     
+    # Calculate CPK : min (cpk_low , cpk_high)
+   
+    cpk_row <- data.frame(
+      V1 = NA,  # TimeStamp
+      V2 = NA,  # Serial Num
+      mapply(function(cpk_low_val, cpk_high_val) {
+        if (is.na(cpk_low_val) || is.na(cpk_high_val) ) {
+          return(NA)
+        }
+       
+        round(min(cpk_low_val, cpk_high_val), 5)
+      },
+     
+      cpk_low_row[, 3:ncol(cpk_low_row)],
+      cpk_high_row[, 3:ncol(cpk_high_row)],
+      SIMPLIFY = FALSE)
+    )
+    
+    # Add row names
+    row.names(cpk_row) <- "CPK"
+    
     
     # Combine all calculations with original data
-    rbind(cpk_high_row, cpk_low_row, stdev_row, avg_row, df)
+    rbind(cpk_row, cpk_high_row, cpk_low_row, stdev_row, avg_row, df)
   })
   
   output$table <- renderDT({
