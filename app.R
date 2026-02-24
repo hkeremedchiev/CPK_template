@@ -9,9 +9,7 @@ ui <- fluidPage(
       fileInput("file", "Choose CSV File",
                 accept = c("text/csv",
                            "text/comma-separated-values,text/plain",
-                           ".csv")),
-      hr(),
-      checkboxInput("header", "Header", TRUE)
+                           ".csv"))
     ),
     
     mainPanel(
@@ -29,7 +27,7 @@ server <- function(input, output) {
     req(input$file)
     
     read.csv(input$file$datapath,
-             header = input$header,
+             header = FALSE,
              sep = ";")
   })
   
@@ -40,17 +38,27 @@ server <- function(input, output) {
     data_for_calc <- df[5:nrow(df), ]
     
     # Calculate standard deviation for each column (5 decimal places)
-    stdev_row <- data.frame(lapply(data_for_calc, function(col) {
-      round(sd(as.numeric(col), na.rm = TRUE), 5)
-    }))
+    # Skip first two columns (TimeStamp and Serial Num)
+    stdev_row <- data.frame(
+      V1 = NA,  # TimeStamp
+      V2 = NA,  # Serial Num
+      lapply(data_for_calc[, 3:ncol(data_for_calc)], function(col) {
+        round(sd(as.numeric(col), na.rm = TRUE), 5)
+      })
+    )
     
     # Add row names
     row.names(stdev_row) <- "St Dev"
     
-    # Calculate averages for each column (excluding first 4 rows)
-    avg_row <- data.frame(lapply(data_for_calc, function(col) {
-      round(mean(as.numeric(col), na.rm = TRUE), 2)
-    }))
+    # Calculate averages for each column (5 decimal places)
+    # Skip first two columns (TimeStamp and Serial Num)
+    avg_row <- data.frame(
+      V1 = NA,  # TimeStamp
+      V2 = NA,  # Serial Num
+      lapply(data_for_calc[, 3:ncol(data_for_calc)], function(col) {
+        round(mean(as.numeric(col), na.rm = TRUE), 5)
+      })
+    )
     
     # Add row names
     row.names(avg_row) <- "Average"
