@@ -87,8 +87,33 @@ server <- function(input, output) {
     # Add row names
     row.names(cpk_low_row) <- "CPK low"
     
+    # Calculate CPK high: (Highlimit - Average ) / (St Dev * 3)
+    # HighLimit is in row 1(df[1, ])
+    cpk_high_row <- data.frame(
+      V1 = NA,  # TimeStamp
+      V2 = NA,  # Serial Num
+      mapply(function(high_limit, avg_val, stdev_val) {
+        if (is.na(avg_val) || is.na(stdev_val) || is.na(high_limit)) {
+          return(NA)
+        }
+        high_limit_num <- as.numeric(high_limit)
+        if (is.na(high_limit_num) || stdev_val == 0) {
+          return(NA)
+        }
+        round(( high_limit_num - avg_val) / (stdev_val * 3), 5)
+      },
+      as.list(df[1, 3:ncol(df)]),
+      avg_row[, 3:ncol(avg_row)],
+      stdev_row[, 3:ncol(stdev_row)],
+      SIMPLIFY = FALSE)
+    )
+    
+    # Add row names
+    row.names(cpk_high_row) <- "CPK high"
+    
+    
     # Combine all calculations with original data
-    rbind(cpk_low_row, stdev_row, avg_row, df)
+    rbind(cpk_high_row, cpk_low_row, stdev_row, avg_row, df)
   })
   
   output$table <- renderDT({
