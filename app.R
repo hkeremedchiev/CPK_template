@@ -11,12 +11,7 @@ ui <- fluidPage(
                            "text/comma-separated-values,text/plain",
                            ".csv")),
       hr(),
-      checkboxInput("header", "Header", TRUE),
-      radioButtons("sep", "Separator",
-                   choices = c(Comma = ",",
-                               Semicolon = ";",
-                               Tab = "\t"),
-                   selected = ",")
+      checkboxInput("header", "Header", TRUE)
     ),
     
     mainPanel(
@@ -35,7 +30,7 @@ server <- function(input, output) {
     
     read.csv(input$file$datapath,
              header = input$header,
-             sep = input$sep)
+             sep = ";")
   })
   
   output$table <- renderDT({
