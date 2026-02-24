@@ -110,16 +110,37 @@ server <- function(input, output) {
   
   # 3. Render Table with Frozen Column
   output$table <- renderDT({
+    df_raw <- data_with_avg()
+    
     datatable(
-      data_with_avg(),
+      df_raw,
       extensions = 'FixedColumns',
-      rownames = TRUE, # Keeps your calculation labels (CPK, etc.) visible
+      rownames = TRUE,
       options = list(
         pageLength = 20,
-        scrollX = TRUE,         # Requirement for FixedColumns
-        scrollY = "600px",      # Optional: adds vertical scroll
+        scrollX = TRUE,
+        scrollY = "600px",
         scrollCollapse = TRUE,
-        fixedColumns = list(leftColumns = 1) # Freezes the Row Names + 1st Col
+        fixedColumns = list(leftColumns = 1),
+        # This JavaScript logic looks at the first column (row names) 
+        # If it sees "CPK", it colors the cells based on their numeric value
+        rowCallback = JS(
+          "function(row, data, index) {",
+          "  if (data[0] === 'CPK') {",
+          "    for (var i = 3; i < data.length; i++) {",
+          "      var val = parseFloat(data[i]);",
+          "      if (val < 1.0) {",
+          "        $('td:eq(' + i + ')', row).css('background-color', '#ff7f7f');",
+          "      } else if (val >= 1.0 && val <= 1.33) {",
+          "        $('td:eq(' + i + ')', row).css('background-color', '#ffeb9c');",
+          "      } else if (val > 1.33) {",
+          "        $('td:eq(' + i + ')', row).css('background-color', '#c6efce');",
+          "      }",
+          "      $('td:eq(' + i + ')', row).css('font-weight', 'bold');",
+          "    }",
+          "  }",
+          "}"
+        )
       )
     )
   })
