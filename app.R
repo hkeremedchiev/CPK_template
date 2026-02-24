@@ -114,16 +114,24 @@ server <- function(input, output) {
     
     datatable(
       df_raw,
-      extensions = 'FixedColumns',
+      extensions = c('FixedColumns', 'Buttons'), # 1. Added 'Buttons' here
       rownames = TRUE,
       options = list(
+        dom = 'Bfrtip', # 2. 'B' stands for Buttons - this shows the button on the UI
+        buttons = list(
+          list(
+            extend = 'excel',
+            text = 'Download Excel', # You can name the button whatever you like
+            filename = 'Processed_Data_Report',
+            exportOptions = list(modifier = list(page = 'all')) # Exports all pages, not just the visible 10
+          )
+        ),
         pageLength = 20,
         scrollX = TRUE,
         scrollY = "600px",
         scrollCollapse = TRUE,
         fixedColumns = list(leftColumns = 1),
-        # This JavaScript logic looks at the first column (row names) 
-        # If it sees "CPK", it colors the cells based on their numeric value
+        # Your working JS RowCallback for CPK coloring
         rowCallback = JS(
           "function(row, data, index) {",
           "  if (data[0] === 'CPK') {",
