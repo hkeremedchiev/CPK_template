@@ -33,10 +33,37 @@ server <- function(input, output) {
              sep = ";")
   })
   
+  data_with_avg <- reactive({
+    df <- data()
+    
+    # Skip first 4 rows for calculations
+    data_for_calc <- df[5:nrow(df), ]
+    
+    # Calculate standard deviation for each column (5 decimal places)
+    stdev_row <- data.frame(lapply(data_for_calc, function(col) {
+      round(sd(as.numeric(col), na.rm = TRUE), 5)
+    }))
+    
+    # Add row names
+    row.names(stdev_row) <- "St Dev"
+    
+    # Calculate averages for each column (excluding first 4 rows)
+    avg_row <- data.frame(lapply(data_for_calc, function(col) {
+      round(mean(as.numeric(col), na.rm = TRUE), 2)
+    }))
+    
+    # Add row names
+    row.names(avg_row) <- "Average"
+    
+    # Combine both calculations with original data
+    rbind(stdev_row, avg_row, df)
+  })
+  
   output$table <- renderDT({
-    datatable(data(),
+    datatable(data_with_avg(),
               options = list(pageLength = 10,
-                             scrollX = TRUE))
+                             scrollX = TRUE),
+              rownames = TRUE)
   })
   
   output$summary <- renderPrint({
