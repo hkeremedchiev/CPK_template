@@ -2,14 +2,15 @@ library(shiny)
 library(DT)
 
 ui <- fluidPage(
-  titlePanel("CSV File Viewer"),
+  titlePanel("CSV File Viewer - Frozen Columns & Custom Headers"),
   
   sidebarLayout(
     sidebarPanel(
       fileInput("file", "Choose CSV File",
                 accept = c("text/csv",
                            "text/comma-separated-values,text/plain",
-                           ".csv"))
+                           ".csv")),
+      helpText("Note: This app expects row 4 to be the header and data to start on row 5.")
     ),
     
     mainPanel(
@@ -23,128 +24,109 @@ ui <- fluidPage(
 
 server <- function(input, output) {
   
+  # 1. Raw Data Input
   data <- reactive({
     req(input$file)
-    
+    # Using stringsAsFactors = FALSE to keep text data clean
     read.csv(input$file$datapath,
              header = FALSE,
-             sep = ";")
+             sep = ";",
+             stringsAsFactors = FALSE)
   })
   
+  # 2. Processing and Calculations
   data_with_avg <- reactive({
     df <- data()
     
-    # Skip first 4 rows for calculations
+    # --- HEADER PREPARATION ---
+    # Extract Row 4 for headers
+    header_names <- as.character(unlist(df[4, ]))
+    
+    # Fix: Replace NA or Empty strings in headers to prevent DT errors
+    header_names[is.na(header_names) | header_names == ""] <- paste0("Column_", which(is.na(header_names) | header_names == ""))
+    
+    # --- CALCULATION LOGIC ---
+    # Rows 5 onwards are actual numeric data
     data_for_calc <- df[5:nrow(df), ]
     
-    # Calculate standard deviation for each column (5 decimal places)
-    # Skip first two columns (TimeStamp and Serial Num)
+    # Standard Deviation
     stdev_row <- data.frame(
-      V1 = NA,  # TimeStamp
-      V2 = NA,  # Serial Num
+      V1 = NA, V2 = NA,
       lapply(data_for_calc[, 3:ncol(data_for_calc)], function(col) {
         round(sd(as.numeric(col), na.rm = TRUE), 5)
       })
     )
-    
-    # Add row names
     row.names(stdev_row) <- "St Dev"
     
-    # Calculate averages for each column (5 decimal places)
-    # Skip first two columns (TimeStamp and Serial Num)
+    # Average
     avg_row <- data.frame(
-      V1 = NA,  # TimeStamp
-      V2 = NA,  # Serial Num
+      V1 = NA, V2 = NA,
       lapply(data_for_calc[, 3:ncol(data_for_calc)], function(col) {
         round(mean(as.numeric(col), na.rm = TRUE), 5)
       })
     )
-    
-    # Add row names
     row.names(avg_row) <- "Average"
     
-    # Calculate CPK low: (Average - LowLimit) / (St Dev * 3)
-    # LowLimit is in row 2 (df[2, ])
+    # CPK Low
     cpk_low_row <- data.frame(
-      V1 = NA,  # TimeStamp
-      V2 = NA,  # Serial Num
+      V1 = NA, V2 = NA,
       mapply(function(low_limit, avg_val, stdev_val) {
-        if (is.na(avg_val) || is.na(stdev_val) || is.na(low_limit)) {
-          return(NA)
-        }
         low_limit_num <- as.numeric(low_limit)
-        if (is.na(low_limit_num) || stdev_val == 0) {
-          return(NA)
-        }
+        if (is.na(avg_val) || is.na(stdev_val) || is.na(low_limit_num) || stdev_val == 0) return(NA)
         round((avg_val - low_limit_num) / (stdev_val * 3), 5)
-      },
-      as.list(df[2, 3:ncol(df)]),
-      avg_row[, 3:ncol(avg_row)],
-      stdev_row[, 3:ncol(stdev_row)],
-      SIMPLIFY = FALSE)
+      }, as.list(df[2, 3:ncol(df)]), avg_row[, 3:ncol(avg_row)], stdev_row[, 3:ncol(stdev_row)], SIMPLIFY = FALSE)
     )
-    
-    # Add row names
     row.names(cpk_low_row) <- "CPK low"
     
-    # Calculate CPK high: (Highlimit - Average ) / (St Dev * 3)
-    # HighLimit is in row 1(df[1, ])
+    # CPK High
     cpk_high_row <- data.frame(
-      V1 = NA,  # TimeStamp
-      V2 = NA,  # Serial Num
+      V1 = NA, V2 = NA,
       mapply(function(high_limit, avg_val, stdev_val) {
-        if (is.na(avg_val) || is.na(stdev_val) || is.na(high_limit)) {
-          return(NA)
-        }
         high_limit_num <- as.numeric(high_limit)
-        if (is.na(high_limit_num) || stdev_val == 0) {
-          return(NA)
-        }
-        round(( high_limit_num - avg_val) / (stdev_val * 3), 5)
-      },
-      as.list(df[1, 3:ncol(df)]),
-      avg_row[, 3:ncol(avg_row)],
-      stdev_row[, 3:ncol(stdev_row)],
-      SIMPLIFY = FALSE)
+        if (is.na(avg_val) || is.na(stdev_val) || is.na(high_limit_num) || stdev_val == 0) return(NA)
+        round((high_limit_num - avg_val) / (stdev_val * 3), 5)
+      }, as.list(df[1, 3:ncol(df)]), avg_row[, 3:ncol(avg_row)], stdev_row[, 3:ncol(stdev_row)], SIMPLIFY = FALSE)
     )
-    
-    # Add row names
     row.names(cpk_high_row) <- "CPK high"
     
-    # Calculate CPK : min (cpk_low , cpk_high)
-   
+    # CPK (Min of High and Low)
     cpk_row <- data.frame(
-      V1 = NA,  # TimeStamp
-      V2 = NA,  # Serial Num
-      mapply(function(cpk_low_val, cpk_high_val) {
-        if (is.na(cpk_low_val) || is.na(cpk_high_val) ) {
-          return(NA)
-        }
-       
-        round(min(cpk_low_val, cpk_high_val), 5)
-      },
-     
-      cpk_low_row[, 3:ncol(cpk_low_row)],
-      cpk_high_row[, 3:ncol(cpk_high_row)],
-      SIMPLIFY = FALSE)
+      V1 = NA, V2 = NA,
+      mapply(function(low, high) {
+        if (is.na(low) || is.na(high)) return(NA)
+        min(as.numeric(low), as.numeric(high))
+      }, cpk_low_row[, 3:ncol(cpk_low_row)], cpk_high_row[, 3:ncol(cpk_high_row)], SIMPLIFY = FALSE)
     )
-    
-    # Add row names
     row.names(cpk_row) <- "CPK"
     
+    # --- COMBINE EVERYTHING ---
+    final_table <- rbind(cpk_row, cpk_high_row, cpk_low_row, stdev_row, avg_row, df)
     
-    # Combine all calculations with original data
-    rbind(cpk_row, cpk_high_row, cpk_low_row, stdev_row, avg_row, df)
+    # Apply the cleaned headers
+    colnames(final_table) <- header_names
+    
+    return(final_table)
   })
   
+  # 3. Render Table with Frozen Column
   output$table <- renderDT({
-    datatable(data_with_avg(),
-              options = list(pageLength = 10,
-                             scrollX = TRUE),
-              rownames = TRUE)
+    datatable(
+      data_with_avg(),
+      extensions = 'FixedColumns',
+      rownames = TRUE, # Keeps your calculation labels (CPK, etc.) visible
+      options = list(
+        pageLength = 20,
+        scrollX = TRUE,         # Requirement for FixedColumns
+        scrollY = "600px",      # Optional: adds vertical scroll
+        scrollCollapse = TRUE,
+        fixedColumns = list(leftColumns = 1) # Freezes the Row Names + 1st Col
+      )
+    )
   })
   
+  # 4. Summary Output
   output$summary <- renderPrint({
+    req(data())
     summary(data())
   })
 }
