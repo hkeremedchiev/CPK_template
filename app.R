@@ -4,6 +4,7 @@
 library(shiny)
 library(DT)       # For interactive tables
 library(ggplot2)  # For parameter plotting
+library(plotly) # New library for interactivity
 
 # ==============================================================================
 # USER INTERFACE (UI)
@@ -137,11 +138,9 @@ server <- function(input, output) {
   })
   
   
-  # --- STEP 3: MODAL PLOTTING EVENT ---
-  # Triggers when a user clicks a cell in the table.
+  # --- STEP 3: INTERACTIVE MODAL PLOTTING (PLOTLY) ---
   observeEvent(input$table_cell_clicked, {
     info <- input$table_cell_clicked
-    # Ignore clicks on label columns (0 and 1)
     if (is.null(info$value) || info$col < 2) return()
     
     res <- processed_info()
@@ -153,10 +152,10 @@ server <- function(input, output) {
     
     if (length(col_data$raw) > 1) {
       showModal(modalDialog(
-        title = paste("Analysis:", param_name),
+        title = paste("Interactive Analysis:", param_name),
         fluidRow(
-          column(6, plotOutput("histPlot")),
-          column(6, plotOutput("trendPlot"))
+          column(6, plotlyOutput("histPlot")), # Changed to plotlyOutput
+          column(6, plotlyOutput("trendPlot"))  # Changed to plotlyOutput
         ),
         hr(),
         div(style="text-align: center; font-weight: bold; font-size: 16px;",
@@ -165,24 +164,30 @@ server <- function(input, output) {
         size = "l"
       ))
       
-      # Plot 1: Histogram
-      output$histPlot <- renderPlot({
-        ggplot(data.frame(x=col_data$raw), aes(x=x)) +
+      # Plot 1: Histogram (Converted to Plotly)
+      output$histPlot <- renderPlotly({
+        p1 <- ggplot(data.frame(x=col_data$raw), aes(x=x)) +
           geom_histogram(fill="steelblue", color="white", bins=15) +
-          theme_minimal() + labs(title="Distribution", x="Value", y="Frequency") +
+          theme_minimal() + 
+          labs(title="Distribution", x="Value", y="Frequency") +
           geom_vline(xintercept=c(col_data$l, col_data$h), color="red", linetype="dashed")
+        
+        ggplotly(p1) %>% config(displayModeBar = FALSE) # Clean view, no toolbar until hover
       })
       
-      # Plot 2: Trend
-      output$trendPlot <- renderPlot({
-        ggplot(data.frame(s=1:length(col_data$raw), v=col_data$raw), aes(x=s, y=v)) +
-          geom_line(color="grey") + geom_point(color="steelblue") +
-          theme_minimal() + labs(title="Trend", x="Sample Number", y="Value") +
+      # Plot 2: Trend (Converted to Plotly)
+      output$trendPlot <- renderPlotly({
+        p2 <- ggplot(data.frame(s=1:length(col_data$raw), v=col_data$raw), aes(x=s, y=v)) +
+          geom_line(color="grey") + 
+          geom_point(color="steelblue") +
+          theme_minimal() + 
+          labs(title="Trend Over Time", x="Sample Number", y="Value") +
           geom_hline(yintercept=c(col_data$l, col_data$h), color="red", linetype="dashed")
+        
+        ggplotly(p2)
       })
     }
   })
-  
   
   # --- STEP 4: RENDER TABLE ---
   output$table <- renderDT({
