@@ -1,16 +1,16 @@
 library(shiny)
 library(DT)
+library(ggplot2)
 
 ui <- fluidPage(
   tags$head(
     tags$style(HTML("
-      /* Force container to show scrollbars and keep header visible */
       .dataTables_wrapper { margin-top: 20px; }
       .dataTables_scrollBody { overflow-x: auto !important; }
     "))
   ),
   
-  titlePanel("CSV Analyzer - Gauge & Scroll Fixed"),
+  titlePanel("CSV Analyzer - Gauge & Parameter Plotting"),
   
   sidebarLayout(
     sidebarPanel(
@@ -21,7 +21,7 @@ ui <- fluidPage(
       checkboxInput("gauge_limit", "Gauge Measurement (Limit to 50 Rows)", FALSE),
       
       hr(),
-      helpText("Gauge Measurement now physically removes rows > 50.")
+      helpText("Click on any CPK or Data cell to view the Parameter Histogram.")
     ),
     
     mainPanel(
@@ -47,13 +47,8 @@ server <- function(input, output) {
     header_names <- as.character(unlist(df[4, ]))
     header_names[is.na(header_names) | header_names == ""] <- paste0("Col_", which(is.na(header_names) | header_names == ""))
     
-    # Identify Data Rows
     raw_measurements <- df[5:nrow(df), ]
-    
-    # VISUAL FILTER: If Gauge Limit is checked, physically truncate the data
-    if (input$gauge_limit) {
-      raw_measurements <- head(raw_measurements, 50)
-    }
+    if (input$gauge_limit) { raw_measurements <- head(raw_measurements, 50) }
     
     stats_list <- list()
     outlier_map <- list()
@@ -70,27 +65,23 @@ server <- function(input, output) {
         
         cpk_l <- if(!is.na(l_lim) && !is.na(sd_v) && sd_v != 0) (avg_v - l_lim) / (sd_v * 3) else NA
         cpk_h <- if(!is.na(h_lim) && !is.na(sd_v) && sd_v != 0) (h_lim - avg_v) / (sd_v * 3) else NA
+        cpk_v <- if(!is.na(cpk_l) || !is.na(cpk_h)) min(cpk_l, cpk_h, na.rm = TRUE) else NA
         
-        cpk_v <- NA
-        if(!is.na(cpk_l) || !is.na(cpk_h)) { cpk_v <- min(cpk_l, cpk_h, na.rm = TRUE) }
-        
-        stats_list[[i-2]] <- list(avg=avg_v, sd=sd_v, cpkl=cpk_l, cpkh=cpk_h, cpk=cpk_v)
+        stats_list[[i-2]] <- list(avg=avg_v, sd=sd_v, cpkl=cpk_l, cpkh=cpk_h, cpk=cpk_v, raw = active_vals, h = h_lim, l = l_lim)
         
         if(!is.na(cpk_l) && !is.na(cpk_h)) {
           target <- if(cpk_l < cpk_h) min(active_vals, na.rm=TRUE) else max(active_vals, na.rm=TRUE)
           match_row <- which(suppressWarnings(as.numeric(raw_measurements[, i])) == target)[1]
           if(!is.na(match_row)) {
-            # Offset: 5 summary rows + 4 original meta rows = 9.
             js_row <- match_row + 8 
             outlier_map[[paste0(js_row, "-", i)]] <- TRUE
           }
         }
       } else {
-        stats_list[[i-2]] <- list(avg=NA, sd=NA, cpkl=NA, cpkh=NA, cpk=NA)
+        stats_list[[i-2]] <- list(avg=NA, sd=NA, cpkl=NA, cpkh=NA, cpk=NA, raw = numeric(0), h=NA, l=NA)
       }
     }
     
-    # Format Summary Rows
     fmt <- function(x) if(is.na(x) || is.infinite(x)) "" else round(x, 4)
     cpk_row  <- c("CPK", "", sapply(stats_list, function(x) fmt(x$cpk)))
     cpkh_row <- c("CPK High", "", sapply(stats_list, function(x) fmt(x$cpkh)))
@@ -99,17 +90,81 @@ server <- function(input, output) {
     avg_row  <- c("Average", "", sapply(stats_list, function(x) fmt(x$avg)))
     
     summary_table <- rbind(cpk_row, cpkh_row, cpkl_row, sd_row, avg_row)
-    # Match data columns (including truncated measurements)
-    meta_rows <- df[1:4, ]
-    final_tab <- rbind(summary_table, meta_rows, raw_measurements)
+    final_tab <- rbind(summary_table, df[1:4, ], raw_measurements)
     colnames(final_tab) <- header_names
     
-    return(list(table = final_tab, outliers = outlier_map))
+    return(list(table = final_tab, outliers = outlier_map, stats = stats_list, headers = header_names))
+  })
+  
+  # --- IMPROVED PLOTTING LOGIC ---
+  observeEvent(input$table_cell_clicked, {
+    info <- input$table_cell_clicked
+    # Only trigger if a data column is clicked
+    if (is.null(info$value) || info$col < 2) return()
+    
+    res <- processed_info()
+    col_idx_stats <- info$col - 1
+    
+    # Safety check for index
+    if(col_idx_stats > length(res$stats)) return()
+    
+    col_data <- res$stats[[col_idx_stats]]
+    param_name <- res$headers[info$col + 1]
+    
+    if (length(col_data$raw) > 1) {
+      showModal(modalDialog(
+        title = paste("Detailed Analysis:", param_name),
+        fluidRow(
+          column(6, plotOutput("histPlot")),
+          column(6, plotOutput("trendPlot"))
+        ),
+        hr(),
+        # Display key stats in the footer area for quick reference
+        renderText({
+          paste0("Avg: ", round(col_data$avg, 4), " | SD: ", round(col_data$sd, 4), 
+                 " | CPK: ", round(col_data$cpk, 4))
+        }),
+        footer = modalButton("Close"),
+        size = "l"
+      ))
+      
+      # 1. Improved Histogram with Dynamic Bins
+      output$histPlot <- renderPlot({
+        df_plot <- data.frame(val = col_data$raw)
+        # Sturges' Rule for bins: log2(n) + 1
+        n_bins <- ceiling(log2(length(col_data$raw)) + 1)
+        
+        p1 <- ggplot(df_plot, aes(x = val)) +
+          geom_histogram(aes(y = ..density..), bins = n_bins, fill = "steelblue", color = "white", alpha = 0.6) +
+          geom_density(color = "red", size = 1) +
+          theme_minimal() +
+          labs(title = "Distribution (Histogram)", x = "Value", y = "Density")
+        
+        # Add Limit Lines
+        if(!is.na(col_data$l)) p1 <- p1 + geom_vline(xintercept = col_data$l, color = "darkred", linetype = "dashed", size = 1)
+        if(!is.na(col_data$h)) p1 <- p1 + geom_vline(xintercept = col_data$h, color = "darkred", linetype = "dashed", size = 1)
+        p1
+      })
+      
+      # 2. Trend Plot (Values over time/sequence)
+      output$trendPlot <- renderPlot({
+        df_trend <- data.frame(seq = 1:length(col_data$raw), val = col_data$raw)
+        
+        p2 <- ggplot(df_trend, aes(x = seq, y = val)) +
+          geom_line(color = "grey70") +
+          geom_point(color = "steelblue", size = 2) +
+          theme_minimal() +
+          labs(title = "Trend (Sequence)", x = "Sample Number", y = "Measured Value")
+        
+        if(!is.na(col_data$l)) p2 <- p2 + geom_hline(yintercept = col_data$l, color = "darkred", linetype = "dashed")
+        if(!is.na(col_data$h)) p2 <- p2 + geom_hline(yintercept = col_data$h, color = "darkred", linetype = "dashed")
+        p2
+      })
+    }
   })
   
   output$table <- renderDT({
     res <- processed_info()
-    
     my_callback <- JS(sprintf(
       "function(row, data, index) {
         var outlierEnabled = %s;
@@ -138,13 +193,14 @@ server <- function(input, output) {
     
     datatable(
       res$table,
+      selection = "single", # Ensure we can click cells
       extensions = c('FixedColumns', 'Buttons'),
       options = list(
         dom = 'Bfrtip',
         buttons = list(list(extend = 'excel', text = 'Download Excel')),
         pageLength = 100,
         scrollX = TRUE,
-        scrollY = "600px",  # Fixed height makes horizontal scrollbar stay in view
+        scrollY = "600px",
         scrollCollapse = TRUE,
         fixedColumns = list(leftColumns = 2),
         rowCallback = my_callback
