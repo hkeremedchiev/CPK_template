@@ -1,22 +1,29 @@
 library(shiny)
 library(DT)
 
-#TODO: fix the Excel download button
-#TODO: add functionality to limit number of measurements to 50 for Gm
-#TODO: add plots for each parameter on demand with button?
-#TODO: delete colomn 87 at the end //visual bug?//
-#TODO: make the app stand alone
-
 ui <- fluidPage(
-  titlePanel("CSV File Viewer - Frozen Columns & Custom Headers"),
+  # Custom CSS to force the horizontal scrollbar to appear at the top and bottom
+  tags$head(
+    tags$style(HTML("
+      .dataTables_wrapper { overflow-x: auto; }
+      .dataTables_scrollBody { overflow-x: auto !important; }
+      /* Stick the header so you don't lose track of columns */
+      table.dataTable thead th { position: sticky; top: 0; background: white; z-index: 10; }
+    "))
+  ),
+  
+  titlePanel("CSV Analyzer - Optimized Navigation"),
   
   sidebarLayout(
     sidebarPanel(
       fileInput("file", "Choose CSV File",
-                accept = c("text/csv",
-                           "text/comma-separated-values,text/plain",
-                           ".csv")),
-      helpText("Note: This app expects row 4 to be the header and data to start on row 5.")
+                accept = c("text/csv", "text/comma-separated-values,text/plain", ".csv")),
+      
+      checkboxInput("highlight_outliers", "Highlight Outliers (Closest to Limit)", FALSE),
+      checkboxInput("gauge_limit", "Gauge Measurement (Limit Gm to 50)", FALSE),
+      
+      hr(),
+      helpText("Scrollbar is now available at the top and bottom of the table container.")
     ),
     
     mainPanel(
@@ -30,140 +37,125 @@ ui <- fluidPage(
 
 server <- function(input, output) {
   
-  # 1. Raw Data Input
-  data <- reactive({
+  data_input <- reactive({
     req(input$file)
-    # Using stringsAsFactors = FALSE to keep text data clean
-    read.csv(input$file$datapath,
-             header = FALSE,
-             sep = ";",
-             stringsAsFactors = FALSE)
+    df <- read.csv(input$file$datapath, header = FALSE, sep = ";", stringsAsFactors = FALSE)
+    if (ncol(df) >= 87) { df <- df[, -87] }
+    return(df)
   })
   
-  # 2. Processing and Calculations
-  data_with_avg <- reactive({
-    df <- data()
-    
-    # --- HEADER PREPARATION ---
-    # Extract Row 4 for headers
+  processed_info <- reactive({
+    df <- data_input()
     header_names <- as.character(unlist(df[4, ]))
+    header_names[is.na(header_names) | header_names == ""] <- paste0("Col_", which(is.na(header_names) | header_names == ""))
+    raw_measurements <- df[5:nrow(df), ]
     
-    # Fix: Replace NA or Empty strings in headers to prevent DT errors
-    header_names[is.na(header_names) | header_names == ""] <- paste0("Column_", which(is.na(header_names) | header_names == ""))
+    stats_list <- list()
+    outlier_map <- list()
     
-    # --- CALCULATION LOGIC ---
-    # Rows 5 onwards are actual numeric data
-    data_for_calc <- df[5:nrow(df), ]
+    for(i in 3:ncol(df)) {
+      # Use suppressed warnings to stop the 'NAs introduced by coercion' spam
+      col_vals <- suppressWarnings(as.numeric(raw_measurements[, i]))
+      col_name <- header_names[i]
+      
+      if (input$gauge_limit && grepl("Gm", col_name, ignore.case = TRUE)) {
+        active_vals <- head(col_vals[!is.na(col_vals)], 50)
+      } else {
+        active_vals <- col_vals[!is.na(col_vals)]
+      }
+      
+      # Safety check: only calculate if we have numeric data
+      if(length(active_vals) > 0 && !all(is.na(active_vals))) {
+        avg_v <- mean(active_vals, na.rm = TRUE)
+        sd_v  <- sd(active_vals, na.rm = TRUE)
+        h_lim <- suppressWarnings(as.numeric(df[1, i]))
+        l_lim <- suppressWarnings(as.numeric(df[2, i]))
+        
+        cpk_l <- if(!is.na(l_lim) && !is.na(sd_v) && sd_v != 0) (avg_v - l_lim) / (sd_v * 3) else NA
+        cpk_h <- if(!is.na(h_lim) && !is.na(sd_v) && sd_v != 0) (h_lim - avg_v) / (sd_v * 3) else NA
+        
+        # Fixed the 'min' warning by checking for NAs first
+        cpk_v <- NA
+        if(!is.na(cpk_l) || !is.na(cpk_h)) {
+          cpk_v <- min(cpk_l, cpk_h, na.rm = TRUE)
+        }
+        
+        stats_list[[i-2]] <- list(avg=avg_v, sd=sd_v, cpkl=cpk_l, cpkh=cpk_h, cpk=cpk_v)
+        
+        if(!is.na(cpk_l) && !is.na(cpk_h) && length(active_vals) > 0) {
+          target <- if(cpk_l < cpk_h) min(active_vals, na.rm=TRUE) else max(active_vals, na.rm=TRUE)
+          match_row <- which(suppressWarnings(as.numeric(raw_measurements[, i])) == target)[1]
+          if(!is.na(match_row)) {
+            js_row <- match_row + 8 
+            outlier_map[[paste0(js_row, "-", i)]] <- TRUE
+          }
+        }
+      } else {
+        stats_list[[i-2]] <- list(avg=NA, sd=NA, cpkl=NA, cpkh=NA, cpk=NA)
+      }
+    }
     
-    # Standard Deviation
-    stdev_row <- data.frame(
-      V1 = NA, V2 = NA,
-      lapply(data_for_calc[, 3:ncol(data_for_calc)], function(col) {
-        round(sd(as.numeric(col), na.rm = TRUE), 5)
-      })
-    )
-    row.names(stdev_row) <- "St Dev"
+    # Round results for the table display
+    fmt <- function(x) if(is.na(x) || is.infinite(x)) "" else round(x, 4)
     
-    # Average
-    avg_row <- data.frame(
-      V1 = NA, V2 = NA,
-      lapply(data_for_calc[, 3:ncol(data_for_calc)], function(col) {
-        round(mean(as.numeric(col), na.rm = TRUE), 5)
-      })
-    )
-    row.names(avg_row) <- "Average"
+    cpk_row  <- c("CPK", "", sapply(stats_list, function(x) fmt(x$cpk)))
+    cpkh_row <- c("CPK High", "", sapply(stats_list, function(x) fmt(x$cpkh)))
+    cpkl_row <- c("CPK Low", "", sapply(stats_list, function(x) fmt(x$cpkl)))
+    sd_row   <- c("St Dev", "", sapply(stats_list, function(x) fmt(x$sd)))
+    avg_row  <- c("Average", "", sapply(stats_list, function(x) fmt(x$avg)))
     
-    # CPK Low
-    cpk_low_row <- data.frame(
-      V1 = NA, V2 = NA,
-      mapply(function(low_limit, avg_val, stdev_val) {
-        low_limit_num <- as.numeric(low_limit)
-        if (is.na(avg_val) || is.na(stdev_val) || is.na(low_limit_num) || stdev_val == 0) return(NA)
-        round((avg_val - low_limit_num) / (stdev_val * 3), 5)
-      }, as.list(df[2, 3:ncol(df)]), avg_row[, 3:ncol(avg_row)], stdev_row[, 3:ncol(stdev_row)], SIMPLIFY = FALSE)
-    )
-    row.names(cpk_low_row) <- "CPK low"
+    summary_table <- rbind(cpk_row, cpkh_row, cpkl_row, sd_row, avg_row)
+    colnames(summary_table) <- colnames(df)
+    final_tab <- rbind(summary_table, df)
+    colnames(final_tab) <- header_names
     
-    # CPK High
-    cpk_high_row <- data.frame(
-      V1 = NA, V2 = NA,
-      mapply(function(high_limit, avg_val, stdev_val) {
-        high_limit_num <- as.numeric(high_limit)
-        if (is.na(avg_val) || is.na(stdev_val) || is.na(high_limit_num) || stdev_val == 0) return(NA)
-        round((high_limit_num - avg_val) / (stdev_val * 3), 5)
-      }, as.list(df[1, 3:ncol(df)]), avg_row[, 3:ncol(avg_row)], stdev_row[, 3:ncol(stdev_row)], SIMPLIFY = FALSE)
-    )
-    row.names(cpk_high_row) <- "CPK high"
-    
-    # CPK (Min of High and Low)
-    cpk_row <- data.frame(
-      V1 = NA, V2 = NA,
-      mapply(function(low, high) {
-        if (is.na(low) || is.na(high)) return(NA)
-        min(as.numeric(low), as.numeric(high))
-      }, cpk_low_row[, 3:ncol(cpk_low_row)], cpk_high_row[, 3:ncol(cpk_high_row)], SIMPLIFY = FALSE)
-    )
-    row.names(cpk_row) <- "CPK"
-    
-    # --- COMBINE EVERYTHING ---
-    final_table <- rbind(cpk_row, cpk_high_row, cpk_low_row, stdev_row, avg_row, df)
-    
-    # Apply the cleaned headers
-    colnames(final_table) <- header_names
-    
-    return(final_table)
+    return(list(table = final_tab, outliers = outlier_map))
   })
   
-  # 3. Render Table with Frozen Column
   output$table <- renderDT({
-    df_raw <- data_with_avg()
+    res <- processed_info()
+    
+    my_callback <- JS(sprintf(
+      "function(row, data, index) {
+        var outlierEnabled = %s;
+        var outlierMap = %s;
+        if (index === 0) {
+          for (var i = 2; i < data.length; i++) {
+            var val = parseFloat(data[i]);
+            if (!isNaN(val)) {
+              if (val < 1.0) { $('td:eq('+i+')', row).css('background-color', '#ff7f7f'); }
+              else if (val <= 1.33) { $('td:eq('+i+')', row).css('background-color', '#ffeb9c'); }
+              else if (val > 1.33) { $('td:eq('+i+')', row).css('background-color', '#c6efce'); }
+              $('td:eq('+i+')', row).css('font-weight', 'bold');
+            }
+          }
+        }
+        if (outlierEnabled && index >= 9) {
+          for (var i = 2; i < data.length; i++) {
+            var key = index + '-' + i;
+            if (outlierMap[key]) {
+              $('td:eq(' + i + ')', row).css({'background-color': '#ffa500', 'color': 'white', 'font-weight': 'bold'});
+            }
+          }
+        }
+      }", tolower(input$highlight_outliers), jsonlite::toJSON(res$outliers, auto_unbox = TRUE)
+    ))
     
     datatable(
-      df_raw,
-      extensions = c('FixedColumns', 'Buttons'), # 1. Added 'Buttons' here
-      rownames = TRUE,
+      res$table,
+      extensions = c('FixedColumns', 'Buttons'),
       options = list(
-        dom = 'Bfrtip', # 2. 'B' stands for Buttons - this shows the button on the UI
-        buttons = list(
-          list(
-            extend = 'excel',
-            text = 'Download Excel', # You can name the button whatever you like
-            filename = 'Processed_Data_Report',
-            exportOptions = list(modifier = list(page = 'all')) # Exports all pages, not just the visible 10
-          )
-        ),
-        pageLength = 100,
+        dom = 'Bfrtip',
+        buttons = list(list(extend = 'excel', text = 'Download Excel')),
+        pageLength = 100, # Show 100 rows as requested
         scrollX = TRUE,
-        scrollY = "600px",
-        scrollCollapse = TRUE,
-        fixedColumns = list(leftColumns = 1),
-        # Your working JS RowCallback for CPK coloring
-        rowCallback = JS(
-          "function(row, data, index) {",
-          "  if (data[0] === 'CPK') {",
-          "    for (var i = 3; i < data.length; i++) {",
-          "      var val = parseFloat(data[i]);",
-          "      if (val < 1.0) {",
-          "        $('td:eq(' + i + ')', row).css('background-color', '#ff7f7f');",
-          "      } else if (val >= 1.0 && val <= 1.33) {",
-          "        $('td:eq(' + i + ')', row).css('background-color', '#ffeb9c');",
-          "      } else if (val > 1.33) {",
-          "        $('td:eq(' + i + ')', row).css('background-color', '#c6efce');",
-          "      }",
-          "      $('td:eq(' + i + ')', row).css('font-weight', 'bold');",
-          "    }",
-          "  }",
-          "}"
-        )
+        fixedColumns = list(leftColumns = 2),
+        rowCallback = my_callback
       )
     )
-  })
+  }, server = FALSE)
   
-  # 4. Summary Output
-  output$summary <- renderPrint({
-    req(data())
-    summary(data())
-  })
+  output$summary <- renderPrint({ req(data_input()); summary(data_input()) })
 }
 
 shinyApp(ui, server)
