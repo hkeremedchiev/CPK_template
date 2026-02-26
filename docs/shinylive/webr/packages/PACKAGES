@@ -1,0 +1,16 @@
+Package: colorspace
+Version: 2.1-1
+Depends: R (>= 3.0.0), methods
+Imports: graphics, grDevices, stats
+Suggests: datasets, utils, KernSmooth, MASS, kernlab, mvtnorm, vcd, tcltk, shiny,
+         shinyjs, ggplot2, dplyr, scales, grid, png, jpeg, knitr, rmarkdown,
+         RColorBrewer, rcartocolor, scico, viridis, wesanderson
+License: BSD_3_clause + file LICENSE
+MD5sum: 2aa5bc40f0ca425c02fe089786bb0c6d
+
+Package: munsell
+Version: 0.5.1
+Imports: colorspace, methods
+Suggests: ggplot2, testthat
+License: MIT + file LICENSE
+MD5sum: ce2e6f7ae77683a364c37d23cd346d6d
