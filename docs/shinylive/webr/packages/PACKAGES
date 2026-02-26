@@ -14,3 +14,4 @@ Imports: colorspace, methods
 Suggests: ggplot2, testthat
 License: MIT + file LICENSE
 MD5sum: ce2e6f7ae77683a364c37d23cd346d6d
+
