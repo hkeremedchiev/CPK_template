@@ -5,6 +5,8 @@ library(shiny)
 library(DT)       # For interactive tables
 library(ggplot2)  # For parameter plotting
 library(plotly) # New library for interactivity
+library(munsell) #added out of sheer frustration and 2 days of failed deployment
+library(colorspace)
 
 # ==============================================================================
 # USER INTERFACE (UI)
