@@ -1,0 +1,10 @@
+name: cpk_template
+title:
+username: hkeremedchiev
+account: hkeremedchiev
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 16813338
+bundleId: 11660878
+url: https://hkeremedchiev.shinyapps.io/cpk_template/
+version: 1
