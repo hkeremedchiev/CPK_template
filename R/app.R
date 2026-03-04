@@ -65,15 +65,21 @@ ui <- fluidPage(
 # SERVER LOGIC
 # ==============================================================================
 
-##' @title Process Capability Analyzer Server
-##' @name server
-##' @description Handles the backend logic for data processing and export.
-##' @export
+#' @title Process Capability Analyzer Server
+#' @name server
+#' @description Handles the backend logic for data processing, statistical calculations, and exporting results.
+#' @param input Shiny input object
+#' @param output Shiny output object
+#' @param session Shiny session object
+#' @export
 server <- function(input, output, session) {
   
   # ----------------------------------------------------------------------------
-  ##' @section Data Ingestion:
-  ##' Ingests CSV and applies both index-based and value-based row exclusions.
+  #' @section Data Ingestion:
+  #' This section manages the initial reading of the semicolon-separated CSV files. 
+  #' It handles the row exclusion logic, allowing users to remove specific 
+  #' outliers by Row ID or filter the entire dataset based on column values 
+  #' (e.g., isolating a specific Test Position).
   # ----------------------------------------------------------------------------
   raw_data <- reactive({
     req(input$file)
@@ -107,7 +113,10 @@ server <- function(input, output, session) {
   })
   
   # ----------------------------------------------------------------------------
-  ##' @section Selection Observers:
+  #' @section Selection Observers:
+  #' These reactive observers monitor user interactions with the sidebar. They 
+  #' dynamically update column selection choices when a new file is uploaded 
+  #' and manage the "Select All" / "Clear All" convenience functions.
   # ----------------------------------------------------------------------------
   observeEvent(input$file, {
     df <- raw_data()
@@ -134,8 +143,10 @@ server <- function(input, output, session) {
   })
   
   # ----------------------------------------------------------------------------
-  ##' @section Processing Logic:
-  ##' Synchronizes Cpk math with the actual table rows shown.
+  #' @section Processing Logic:
+  #' The core analytical engine of the app. It calculates Average, Standard 
+  #' Deviation, and Cpk values for all selected parameters. It also synchronizes 
+  #' the data table view with the "Limit to 50 Rows" gauge study setting.
   # ----------------------------------------------------------------------------
   processed_info <- reactive({
     req(raw_data())
@@ -208,7 +219,10 @@ server <- function(input, output, session) {
   })
   
   # ----------------------------------------------------------------------------
-  ##' @section Excel Export:
+  #' @section Excel Export:
+  #' Utilizes the `openxlsx` library to generate a formatted Excel workbook. 
+  #' The export includes the summary statistics and the filtered raw data, 
+  #' allowing for offline reporting and archiving.
   # ----------------------------------------------------------------------------
   output$download_excel <- downloadHandler(
     filename = function() { paste0("Cpk_Report_", Sys.Date(), ".xlsx") },
@@ -224,7 +238,10 @@ server <- function(input, output, session) {
   )
   
   # ----------------------------------------------------------------------------
-  ##' @section Table Rendering:
+  #' @section Table Rendering:
+  #' Manages the interactive DT (DataTables) display. This includes custom 
+  #' JavaScript formatting to highlight Cpk values and outliers, ensuring 
+  #' that critical manufacturing issues are visually prominent.
   # ----------------------------------------------------------------------------
   output$table <- renderDT({
     req(processed_info())
