@@ -23,6 +23,11 @@ Cpk = \min\left( \frac{USL - \mu}{3\sigma}, \frac{\mu - LSL}{3\sigma} \right)
 where $`\mu`$ is the mean and $`\sigma`$ is the standard deviation of
 the selected data range.
 
+# Process Capability Analyzer 🚀
+
+[![Launch
+App](https://img.shields.io/badge/ShinyApps-Launch%20App-blue?style=for-the-badge&logo=rstudio)](https://hkeremedchiev.shinyapps.io/cpk_template/)
+
 # Package index
 
 ## All functions
