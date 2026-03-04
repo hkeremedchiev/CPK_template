@@ -1,0 +1,13 @@
+Package: CpkTemplate
+Title: Process Capability Analysis and Reporting Tool
+Version: 0.0.0.9000
+Authors@R: 
+    person("Hristo", "Keremedchiev", , "hkeremedchiev.email@example.com", role = c("aut", "cre"))
+Description: An interactive Shiny application designed to calculate Process 
+    Capability Indices (Cpk) from CSV data. Features include automated 
+    outlier highlighting, customizable row exclusions, and stylized 
+    Excel report generation.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.3.3
