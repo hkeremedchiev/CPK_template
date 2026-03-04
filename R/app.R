@@ -42,6 +42,11 @@ ui <- fluidPage(
       helpText("Note: Row numbering follows the 'Row' column in the table."),
       
       hr(),
+      h4("Value-Based Filtering"),
+      selectizeInput("filter_col", "Filter by Column:", choices = NULL),
+      textInput("exclude_values", "Exclude specific values (comma separated):", ""),
+      
+      hr(),
       checkboxInput("highlight_outliers", "Highlight Outliers", FALSE),
       checkboxInput("gauge_limit", "Limit to 50 Rows", FALSE),
       downloadButton("download_excel", "Export to Excel (.xlsx)", class = "btn-success")
@@ -68,18 +73,35 @@ server <- function(input, output, session) {
   
   # ----------------------------------------------------------------------------
   ##' @section Data Ingestion:
+  ##' Ingests CSV and applies both index-based and value-based row exclusions.
   # ----------------------------------------------------------------------------
   raw_data <- reactive({
     req(input$file)
     df <- read.csv(input$file$datapath, header = FALSE, sep = ";", stringsAsFactors = FALSE)
     df <- cbind(Row_ID = 1:nrow(df), df)
     
+    # 1. Exclude by Row ID
     exclude_text <- input$remove_row_list
     if (!is.null(exclude_text) && exclude_text != "") {
       remove_vector <- as.numeric(unlist(regmatches(exclude_text, gregexpr("[0-9]+", exclude_text))))
       if (length(remove_vector) > 0) {
         df <- df[!(df$Row_ID %in% remove_vector), ]
       }
+    }
+    
+    # 2. Value-Based Row Filtering
+    if (!is.null(input$exclude_values) && input$exclude_values != "" && !is.null(input$filter_col)) {
+      vals_to_remove <- trimws(unlist(strsplit(input$exclude_values, ",")))
+      target_col <- input$filter_col
+      
+      # Create mask
+      keep_rows <- !(as.character(df[[target_col]]) %in% vals_to_remove)
+      
+      # Protect Metadata (Rows 1-4)
+      if (nrow(df) >= 4) {
+        keep_rows[1:4] <- TRUE
+      }
+      df <- df[keep_rows, ]
     }
     return(df)
   })
@@ -89,10 +111,14 @@ server <- function(input, output, session) {
   # ----------------------------------------------------------------------------
   observeEvent(input$file, {
     df <- raw_data()
-    all_ids <- names(df)[-(1:3)]
-    all_labels <- as.character(df[4, -(1:3)])
+    all_ids <- names(df)
+    all_labels <- as.character(df[4, ])
     names(all_ids) <- all_labels
-    updateSelectizeInput(session, "selected_cols", choices = all_ids, selected = all_ids)
+    
+    analysis_cols <- all_ids[-(1:3)]
+    
+    updateSelectizeInput(session, "selected_cols", choices = analysis_cols, selected = analysis_cols)
+    updateSelectizeInput(session, "filter_col", choices = all_ids, selected = NULL)
   })
   
   observeEvent(input$select_all, {
@@ -109,28 +135,31 @@ server <- function(input, output, session) {
   
   # ----------------------------------------------------------------------------
   ##' @section Processing Logic:
+  ##' Synchronizes Cpk math with the actual table rows shown.
   # ----------------------------------------------------------------------------
   processed_info <- reactive({
     req(raw_data())
     full_df <- raw_data()
     
+    # 1. Selection & Sorting
     meta_cols <- names(full_df)[1:3]
     selected_ids <- input$selected_cols
     all_possible_ids <- names(full_df)
-    
     ordered_selection <- all_possible_ids[all_possible_ids %in% selected_ids]
     current_cols <- c(meta_cols, ordered_selection)
     df <- full_df[, current_cols, drop = FALSE]
     
     header_names <- as.character(df[4, ]) 
     
-    if (ncol(df) <= 3) {
-      return(list(table = df, stats = list(), headers = header_names, outliers = list()))
+    if (ncol(df) <= 3) return(list(table = df, stats = list(), headers = header_names, outliers = list()))
+    
+    # 2. THE FIX: Apply the limit to the raw_measurements variable globally
+    raw_measurements <- df[5:nrow(df), ]
+    if (input$gauge_limit) { 
+      raw_measurements <- head(raw_measurements, 50) 
     }
     
-    raw_measurements <- df[5:nrow(df), ]
-    if (input$gauge_limit) { raw_measurements <- head(raw_measurements, 50) }
-    
+    # 3. Stats Calculation (Now uses limited measurements automatically)
     stats_list <- list()
     outlier_map <- list()
     
@@ -156,11 +185,10 @@ server <- function(input, output, session) {
             outlier_map[[paste0(js_row, "-", (i-1))]] <- TRUE
           }
         }
-      } else { 
-        stats_list[[i-3]] <- list(avg=NA, sd=NA, cpk=NA, raw=numeric(0), h=NA, l=NA) 
-      }
+      } else { stats_list[[i-3]] <- list(avg=NA, sd=NA, cpk=NA, raw=numeric(0), h=NA, l=NA) }
     }
     
+    # 4. Assembly (final_tab now uses the updated raw_measurements)
     fmt <- function(x) if(is.na(x)) "" else round(x, 4)
     sum_rows <- rbind(
       c("---", "SUMMARY", "CPK", sapply(stats_list, function(x) fmt(x$cpk))),
@@ -172,7 +200,7 @@ server <- function(input, output, session) {
       unname(as.matrix(sum_rows)),
       unname(as.matrix(df[1:2, ])),
       unname(as.matrix(df[4, , drop=FALSE])),
-      unname(as.matrix(raw_measurements))
+      unname(as.matrix(raw_measurements)) # Uses the 50-row version if checkbox is TRUE
     )
     
     colnames(final_tab) <- header_names 
