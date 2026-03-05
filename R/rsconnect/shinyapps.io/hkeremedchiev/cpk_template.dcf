@@ -5,6 +5,6 @@ account: hkeremedchiev
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 16813338
-bundleId: 11660901
+bundleId: 11665744
 url: https://hkeremedchiev.shinyapps.io/cpk_template/
 version: 1
