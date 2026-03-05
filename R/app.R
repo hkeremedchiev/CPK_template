@@ -135,22 +135,46 @@ server <- function(input, output, session) {
     for(i in 4:ncol(df)) {
       col_vals <- suppressWarnings(as.numeric(raw_measurements[, i]))
       active_vals <- col_vals[!is.na(col_vals)]
+      
       if(length(active_vals) > 0) {
-        avg_v <- mean(active_vals); sd_v <- sd(active_vals)
-        h_lim <- suppressWarnings(as.numeric(df[1, i])); l_lim <- suppressWarnings(as.numeric(df[2, i]))
+        med_v <- median(active_vals)
+        mad_v <- mad(active_vals, na.rm = TRUE)
+        
+        # We use a 0.05 floor and 10x multiplier to ignore the 'tight pack' noise
+        threshold_spread <- max(mad_v, 0.05)
+        
+        # Stats for the summary rows
+        avg_v <- mean(active_vals)
+        sd_v  <- sd(active_vals)
+        h_lim <- suppressWarnings(as.numeric(df[1, i]))
+        l_lim <- suppressWarnings(as.numeric(df[2, i]))
         cpk_l <- if(!is.na(l_lim) && !is.na(sd_v) && sd_v != 0) (avg_v - l_lim) / (sd_v * 3) else NA
         cpk_h <- if(!is.na(h_lim) && !is.na(sd_v) && sd_v != 0) (h_lim - avg_v) / (sd_v * 3) else NA
         cpk_v <- if(!is.na(cpk_l) || !is.na(cpk_h)) min(cpk_l, cpk_h, na.rm = TRUE) else NA
         stats_list[[i-3]] <- list(avg=avg_v, sd=sd_v, cpk=cpk_v, raw=active_vals, h=h_lim, l=l_lim)
-        if(!is.na(cpk_v)) {
-          target <- if(is.na(cpk_l) || cpk_l < cpk_h) min(active_vals) else max(active_vals)
-          match_idx <- which(suppressWarnings(as.numeric(raw_measurements[, i])) == target)[1]
-          if(!is.na(match_idx)) {
-            js_row <- (match_idx - 1) + 6 
-            outlier_map[[paste0(js_row, "-", (i-1))]] <- TRUE
+        
+        # --- THE FIX ---
+        is_outlier <- !is.na(col_vals) & (abs(col_vals - med_v) > (10 * threshold_spread))
+        # --- THE CORRECTED MAPPING ---
+        is_outlier <- !is.na(col_vals) & (abs(col_vals - med_v) > (10 * threshold_spread))
+        
+        if(any(is_outlier)) {
+          out_rows <- which(is_outlier)
+          for(r in out_rows) {
+            # JS row = (index in raw_measurements - 1) + 6 offset for summary/header rows
+            js_row <- (r - 1) + 6 
+            
+            # THE CRITICAL ADJUSTMENT:
+            # If i-1 was still too far to the right, i-2 will snap it 
+            # to the left, onto the Crystal Frequency column.
+            col_target <- i - 2
+            
+            outlier_map[[paste0(js_row, "-", col_target)]] <- TRUE
           }
         }
-      } else { stats_list[[i-3]] <- list(avg=NA, sd=NA, cpk=NA, raw=numeric(0), h=NA, l=NA) }
+      } else { 
+        stats_list[[i-3]] <- list(avg=NA, sd=NA, cpk=NA, raw=numeric(0), h=NA, l=NA) 
+      }
     }
     
     fmt <- function(x) if(is.na(x)) "" else round(x, 4)
@@ -167,6 +191,7 @@ server <- function(input, output, session) {
       unname(as.matrix(raw_measurements))
     )
     colnames(final_tab) <- header_names 
+    
     return(list(table = final_tab, stats = stats_list, headers = header_names, outliers = outlier_map))
   })
   
