@@ -10,11 +10,10 @@ library(munsell)
 library(jsonlite)   
 library(openxlsx)   
 
+
 # ==============================================================================
 # UI DEFINITION
 # ==============================================================================
-#' @name ui
-#' @export
 ui <- fluidPage(
   tags$head(tags$style(HTML("
     .dataTables_wrapper { margin-top: 20px; }
@@ -26,25 +25,15 @@ ui <- fluidPage(
   sidebarLayout(
     sidebarPanel(
       fileInput("file", "Choose CSV File", accept = c(".csv")),
-      
-      selectizeInput(
-        "selected_cols", "Columns to Analyze:", 
-        choices = NULL, multiple = TRUE,
-        options = list(plugins = list('remove_button'))
-      ),
-      
+      selectizeInput("selected_cols", "Columns to Analyze:", choices = NULL, multiple = TRUE, options = list(plugins = list('remove_button'))),
       actionButton("select_all", "Select All"),
       actionButton("clear_all", "Clear All"),
-      
       hr(),
       textInput("remove_row_list", "Exclude Rows (e.g., 5, 12, 18):", value = ""),
-      helpText("Note: Row numbering follows the 'Row' column in the table."),
-      
       hr(),
       h4("Value-Based Filtering"),
       selectizeInput("filter_col", "Filter by Column:", choices = NULL),
       textInput("exclude_values", "Exclude specific values (comma separated):", ""),
-      
       hr(),
       checkboxInput("highlight_outliers", "Highlight Outliers", FALSE),
       checkboxInput("gauge_limit", "Limit to 50 Rows", FALSE),
@@ -53,6 +42,7 @@ ui <- fluidPage(
     
     mainPanel(
       tabsetPanel(
+        id = "main_tabs",
         tabPanel("Table View", DTOutput("table")),
         tabPanel("Data Summary", verbatimTextOutput("summary"))
       )
@@ -181,6 +171,19 @@ server <- function(input, output, session) {
       saveWorkbook(wb, file, overwrite = TRUE)
     }
   )
+  
+  # ----------------------------------------------------------------------------
+  # DEBUGGING PLOTS
+  # ----------------------------------------------------------------------------
+  observeEvent(input$table_cell_clicked, {
+    click <- input$table_cell_clicked
+    req(click, !is.null(click$col)) 
+    
+    # Only process data columns (Column 4 and beyond)
+    if (click$col + 1 >= 4) {
+      show_analysis_modal(click, processed_info(), output)
+    }
+  })
   
   output$table <- renderDT({
     req(processed_info())
