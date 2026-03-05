@@ -2,7 +2,7 @@
 # LIBRARIES
 # ==============================================================================
 library(shiny)
-library(DT)          
+library(DT)           
 library(ggplot2)    
 library(plotly)
 library(colorspace) 
@@ -54,9 +54,19 @@ ui <- fluidPage(
 # ==============================================================================
 # SERVER LOGIC
 # ==============================================================================
-#' @name server
-#' @export
 server <- function(input, output, session) {
+  
+  # 1. Create a reactive value to track the user's choice
+  current_view_length <- reactiveVal(100)
+  
+  # 2. Update that value whenever the user changes the 'Show X entries' dropdown
+  # 'table_state' is a special input created by DT when stateSave = TRUE
+  observe({
+    state <- input$table_state
+    if (!is.null(state$length)) {
+      current_view_length(state$length)
+    }
+  })
   
   raw_data <- reactive({
     req(input$file)
@@ -173,14 +183,9 @@ server <- function(input, output, session) {
     }
   )
   
-  # ----------------------------------------------------------------------------
-  # DEBUGGING PLOTS
-  # ----------------------------------------------------------------------------
   observeEvent(input$table_cell_clicked, {
     click <- input$table_cell_clicked
     req(click, !is.null(click$col)) 
-    
-    # Only process data columns (Column 4 and beyond)
     if (click$col + 1 >= 4) {
       show_analysis_modal(click, processed_info(), output)
     }
@@ -195,7 +200,11 @@ server <- function(input, output, session) {
       extensions = 'FixedColumns',
       options = list(
         scrollX = TRUE, 
-        pageLength = 50, 
+        lengthMenu = list(c(10, 25, 50, 100, 200, 500, -1), c('10', '25', '50', '100', '200', '500', 'All')),
+        # 3. Use the reactive value here
+        pageLength = current_view_length(), 
+        stateSave = TRUE,
+        stateDuration = -1,
         fixedColumns = list(leftColumns = 3),
         rowCallback = JS(sprintf(
           "function(row, data, index) {
@@ -226,7 +235,4 @@ server <- function(input, output, session) {
   output$summary <- renderPrint({ req(raw_data()); summary(raw_data()) })
 }
 
-# ==============================================================================
-# EXECUTION
-# ==============================================================================
 shinyApp(ui, server)
