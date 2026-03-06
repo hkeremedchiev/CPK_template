@@ -10,7 +10,8 @@ library(munsell)
 library(jsonlite)   
 library(openxlsx)   
 
-source("modals.R")
+source("R/modals.R")
+source("R/doc_helper.R")
 
 # ==============================================================================
 # UI DEFINITION

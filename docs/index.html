@@ -47,7 +47,7 @@
   <main id="main" class="col-md-9"><div class="section level1">
 <div class="page-header"><h1 id="cpktemplate-process-capability-analysis-tool">CpkTemplate: Process Capability Analysis Tool<a class="anchor" aria-label="anchor" href="#cpktemplate-process-capability-analysis-tool"></a>
 </h1></div>
-<p>An interactive Shiny application designed to streamline the calculation of <strong>Process Capability Indices (Cpk)</strong> from raw manufacturing data.</p>
+<p>An interactive Shiny application designed to streamline the calculation of <strong>Process Capability Indices (<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>p</mi><mi>k</mi></mrow></msub><annotation encoding="application/x-tex">C_{pk}</annotation></semantics></math>)</strong> from raw manufacturing data.</p>
 <div class="section level2">
 <h2 id="key-features">Key Features<a class="anchor" aria-label="anchor" href="#key-features"></a>
 </h2>
@@ -55,9 +55,18 @@
 <li>
 <strong>Dynamic Ingestion</strong>: Upload CSV files and automatically map measurement columns.</li>
 <li>
-<strong>Smart Filtering</strong>: Exclude specific rows using Regex-based numeric filtering to remove outliers or setup data.</li>
+<strong>Measurement-Centric Indexing</strong>: The <code>Row_ID</code> column is strictly aligned with measurement points. Visual Row <strong>1</strong> in the table perfectly matches Data Point <strong>1</strong> on all Trendplots, eliminating header-offset confusion.</li>
 <li>
-<strong>Visual Insights</strong>: Real-time table highlighting for values below Cpk thresholds (Red &lt; 1.0, Yellow &lt; 1.33).</li>
+<strong>Variability Contributor (Diagnostic Tool)</strong>: Replaces generic outlier detection with a targeted sensitivity analysis. It automatically identifies and highlights the specific data point in each column that most significantly degrades the <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>p</mi><mi>k</mi></mrow></msub><annotation encoding="application/x-tex">C_{pk}</annotation></semantics></math> (the “weakest link” in the process spread).</li>
+<li>
+<strong>Smart Filtering &amp; Row Exclusion</strong>:
+<ul>
+<li>Exclude specific rows using numeric filtering to remove test or setup data.</li>
+<li>The input targets visual <code>Row_ID</code> values, protecting metadata like USL/LSL and summary headers from accidental deletion.</li>
+</ul>
+</li>
+<li>
+<strong>Visual Insights</strong>: Real-time table highlighting for values below <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>p</mi><mi>k</mi></mrow></msub><annotation encoding="application/x-tex">C_{pk}</annotation></semantics></math> thresholds (Red &lt; 1.0, Yellow &lt; 1.33).</li>
 <li>
 <strong>Professional Export</strong>: Generate stylized Excel reports with color-coded results ready for management review.</li>
 </ul>
@@ -65,7 +74,21 @@
 <div class="section level2">
 <h2 id="calculation-logic">Calculation Logic<a class="anchor" aria-label="anchor" href="#calculation-logic"></a>
 </h2>
-<p>The tool calculates Cpk based on the standard formula: <math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>p</mi><mi>k</mi><mo>=</mo><mo>min</mo><mrow><mo stretchy="true" form="prefix">(</mo><mfrac><mrow><mi>U</mi><mi>S</mi><mi>L</mi><mo>−</mo><mi>μ</mi></mrow><mrow><mn>3</mn><mi>σ</mi></mrow></mfrac><mo>,</mo><mfrac><mrow><mi>μ</mi><mo>−</mo><mi>L</mi><mi>S</mi><mi>L</mi></mrow><mrow><mn>3</mn><mi>σ</mi></mrow></mfrac><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">Cpk = \min\left( \frac{USL - \mu}{3\sigma}, \frac{\mu - LSL}{3\sigma} \right)</annotation></semantics></math> where <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>μ</mi><annotation encoding="application/x-tex">\mu</annotation></semantics></math> is the mean and <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>σ</mi><annotation encoding="application/x-tex">\sigma</annotation></semantics></math> is the standard deviation of the selected data range.</p>
+<p>The tool calculates <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>p</mi><mi>k</mi></mrow></msub><annotation encoding="application/x-tex">C_{pk}</annotation></semantics></math> based on the standard formula:</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>C</mi><mrow><mi>p</mi><mi>k</mi></mrow></msub><mo>=</mo><mo>min</mo><mrow><mo stretchy="true" form="prefix">(</mo><mfrac><mrow><mi>U</mi><mi>S</mi><mi>L</mi><mo>−</mo><mi>μ</mi></mrow><mrow><mn>3</mn><mi>σ</mi></mrow></mfrac><mo>,</mo><mfrac><mrow><mi>μ</mi><mo>−</mo><mi>L</mi><mi>S</mi><mi>L</mi></mrow><mrow><mn>3</mn><mi>σ</mi></mrow></mfrac><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">C_{pk} = \min\left( \frac{USL - \mu}{3\sigma}, \frac{\mu - LSL}{3\sigma} \right)</annotation></semantics></math></p>
+<p>where <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>μ</mi><annotation encoding="application/x-tex">\mu</annotation></semantics></math> is the mean and <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>σ</mi><annotation encoding="application/x-tex">\sigma</annotation></semantics></math> is the standard deviation of the selected data range.</p>
+</div>
+<div class="section level2">
+<h2 id="how-to-use-the-variability-contributor">How to Use the Variability Contributor<a class="anchor" aria-label="anchor" href="#how-to-use-the-variability-contributor"></a>
+</h2>
+<ol style="list-style-type: decimal">
+<li>
+<strong>Upload</strong> your CSV and select your columns.</li>
+<li>Check the <strong>“Show Variability Contributor”</strong> box in the sidebar.</li>
+<li>Look for the <strong>Orange Highlight</strong> in the data table; this represents the point causing the most variance in that specific column.</li>
+<li>Investigate that <code>Row_ID</code> to determine if it’s a measurement error or a true process shift.</li>
+</ol>
+<hr>
 </div>
 </div>
 <div class="section level1">

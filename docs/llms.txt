@@ -1,27 +1,53 @@
 # CpkTemplate: Process Capability Analysis Tool
 
 An interactive Shiny application designed to streamline the calculation
-of **Process Capability Indices (Cpk)** from raw manufacturing data.
+of **Process Capability Indices ($`C_{pk}`$)** from raw manufacturing
+data.
 
 ## Key Features
 
 - **Dynamic Ingestion**: Upload CSV files and automatically map
   measurement columns.
-- **Smart Filtering**: Exclude specific rows using Regex-based numeric
-  filtering to remove outliers or setup data.
-- **Visual Insights**: Real-time table highlighting for values below Cpk
-  thresholds (Red \< 1.0, Yellow \< 1.33).
+- **Measurement-Centric Indexing**: The `Row_ID` column is strictly
+  aligned with measurement points. Visual Row **1** in the table
+  perfectly matches Data Point **1** on all Trendplots, eliminating
+  header-offset confusion.
+- **Variability Contributor (Diagnostic Tool)**: Replaces generic
+  outlier detection with a targeted sensitivity analysis. It
+  automatically identifies and highlights the specific data point in
+  each column that most significantly degrades the $`C_{pk}`$ (the
+  “weakest link” in the process spread).
+- **Smart Filtering & Row Exclusion**:
+  - Exclude specific rows using numeric filtering to remove test or
+    setup data.
+  - The input targets visual `Row_ID` values, protecting metadata like
+    USL/LSL and summary headers from accidental deletion.
+- **Visual Insights**: Real-time table highlighting for values below
+  $`C_{pk}`$ thresholds (Red \< 1.0, Yellow \< 1.33).
 - **Professional Export**: Generate stylized Excel reports with
   color-coded results ready for management review.
 
 ## Calculation Logic
 
-The tool calculates Cpk based on the standard formula:
+The tool calculates $`C_{pk}`$ based on the standard formula:
+
 ``` math
-Cpk = \min\left( \frac{USL - \mu}{3\sigma}, \frac{\mu - LSL}{3\sigma} \right)
+C_{pk} = \min\left( \frac{USL - \mu}{3\sigma}, \frac{\mu - LSL}{3\sigma} \right)
 ```
+
 where $`\mu`$ is the mean and $`\sigma`$ is the standard deviation of
 the selected data range.
+
+## How to Use the Variability Contributor
+
+1.  **Upload** your CSV and select your columns.
+2.  Check the **“Show Variability Contributor”** box in the sidebar.
+3.  Look for the **Orange Highlight** in the data table; this represents
+    the point causing the most variance in that specific column.
+4.  Investigate that `Row_ID` to determine if it’s a measurement error
+    or a true process shift.
+
+------------------------------------------------------------------------
 
 # Process Capability Analyzer 🚀
 
@@ -32,7 +58,7 @@ App](https://img.shields.io/badge/ShinyApps-Launch%20App-blue?style=for-the-badg
 
 ## All functions
 
-- [`server()`](server.md) : Process Capability Analyzer Server
+- [`server`](server.md) : Process Capability Analyzer Server
 - [`show_analysis_modal()`](show_analysis_modal.md) : Show Detailed
   Process Analysis Modal
 - [`ui`](ui.md) : Process Capability Analyzer UI

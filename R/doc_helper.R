@@ -16,9 +16,9 @@ NULL
 
 #' Process Capability Analyzer Server
 #'
-#' @description 
-#' The engine that powers the application. It handles reactive data ingestion, 
-#' statistical modeling ($Cpk$, $\sigma$), and the generation of formatted outputs.
+#' @description
+#' The engine that powers the application. It handles reactive data ingestion,
+#' statistical modeling (Cpk, sigma), and the generation of formatted outputs.
 #'
 #' @section Data Ingestion:
 #' 

@@ -1,14 +1,8 @@
 # Process Capability Analyzer Server
 
 The engine that powers the application. It handles reactive data
-ingestion, statistical modeling (\$Cpk\$, \$\$), and the generation of
+ingestion, statistical modeling (Cpk, sigma), and the generation of
 formatted outputs.
-
-## Usage
-
-``` r
-server(input, output, session)
-```
 
 ## Data Ingestion
 
