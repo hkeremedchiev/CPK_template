@@ -2,15 +2,15 @@
 # LIBRARIES
 # ==============================================================================
 library(shiny)
-library(DT)           
-library(ggplot2)    
+library(DT)            
+library(ggplot2)     
 library(plotly)
 library(colorspace) 
-library(munsell)    
-library(jsonlite)   
-library(openxlsx)   
+library(munsell)     
+library(jsonlite)    
+library(openxlsx)    
 
-# This looks for the file in the current folder OR the R subfolder
+# THE FIX: Smart sourcing that works regardless of Working Directory
 source(if(file.exists("modals.R")) "modals.R" else "R/modals.R")
 source(if(file.exists("doc_helper.R")) "doc_helper.R" else "R/doc_helper.R")
 
@@ -28,7 +28,8 @@ ui <- fluidPage(
   sidebarLayout(
     sidebarPanel(
       fileInput("file", "Choose CSV File", accept = c(".csv")),
-      selectizeInput("selected_cols", "Columns to Analyze:", choices = NULL, multiple = TRUE, options = list(plugins = list('remove_button'))),
+      selectizeInput("selected_cols", "Columns to Analyze:", choices = NULL, multiple = TRUE, 
+                     options = list(plugins = list('remove_button'))),
       actionButton("select_all", "Select All"),
       actionButton("clear_all", "Clear All"),
       hr(),
@@ -59,260 +60,251 @@ ui <- fluidPage(
 # ==============================================================================
 server <- function(input, output, session) {
   
-  # 1. Create a reactive value to track the user's choice
-  current_view_length <- reactiveVal(100)
-  
-  # 2. Update that value whenever the user changes the 'Show X entries' dropdown
-  # 'table_state' is a special input created by DT when stateSave = TRUE
-  observe({
-    req(raw_data())
-    updateSelectizeInput(session, "selected_cols", 
-                         choices = names(raw_data()), 
-                         selected = names(raw_data()))
-  })
-  
+  # 1. Load and Filter Raw Data
   raw_data <- reactive({
     req(input$file)
-    # Read the raw CSV
     df <- read.csv(input$file$datapath, header = FALSE, sep = ";", stringsAsFactors = FALSE)
     
-    # --- FIX 1: PROTECT COLUMN NAMES ---
-    # Assign names from Row 4 immediately so the UI 'Columns to Analyze' stays stable
-    if (nrow(df) >= 4) {
-      colnames(df) <- as.character(df[4, ])
-    }
+    if (nrow(df) >= 4) { colnames(df) <- as.character(df[4, ]) }
     
-    # --- FIX 2: CORRECT ROW DELETION ---
+    # Row Deletion Logic
     exclude_text <- input$remove_row_list
     if (!is.null(exclude_text) && exclude_text != "") {
-      remove_vector <- as.numeric(unlist(regmatches(exclude_text, gregexpr("[0-9]+", exclude_text))))
-      if (length(remove_vector) > 0) {
-        # Offset of 4: User types '1' (Measurement 1) -> refers to Physical Row 5
-        # User types '2' (Measurement 2) -> refers to Physical Row 6
-        physical_remove_vector <- remove_vector + 4
-        
-        # Security: Don't let the user delete the first 4 rows (Limits/Headers)
-        physical_remove_vector <- physical_remove_vector[physical_remove_vector > 4]
-        
-        if (length(physical_remove_vector) > 0) {
-          df <- df[!(seq_len(nrow(df)) %in% physical_remove_vector), ]
-        }
+      nums <- as.numeric(unlist(regmatches(exclude_text, gregexpr("[0-9]+", exclude_text))))
+      if (length(nums) > 0) {
+        p_rows <- nums + 4
+        df <- df[!(seq_len(nrow(df)) %in% p_rows[p_rows > 4]), ]
       }
     }
     
-    # --- VALUE-BASED FILTERING ---
+    # Value-Based Filtering Logic
     if (!is.null(input$exclude_values) && input$exclude_values != "" && !is.null(input$filter_col)) {
-      vals_to_remove <- trimws(unlist(strsplit(input$exclude_values, ",")))
-      target_col <- input$filter_col
-      
-      # Now that we fixed the names above, this should work reliably
-      keep_rows <- !(as.character(df[[target_col]]) %in% vals_to_remove)
-      # Always keep the first 4 rows (Limits/Header)
-      if (nrow(df) >= 4) { keep_rows[1:4] <- TRUE }
-      df <- df[keep_rows, ]
+      vals <- trimws(unlist(strsplit(input$exclude_values, ",")))
+      if (input$filter_col %in% names(df)) {
+        keep <- !(as.character(df[[input$filter_col]]) %in% vals)
+        if (nrow(df) >= 4) { keep[1:4] <- TRUE }
+        df <- df[keep, ]
+      }
     }
-    
     return(df)
   })
   
-  observeEvent(input$file, {
-    df <- raw_data()
-    all_ids <- names(df)
-    all_labels <- as.character(df[4, ])
-    names(all_ids) <- all_labels
-    analysis_cols <- all_ids[-(1:3)]
-    updateSelectizeInput(session, "selected_cols", choices = analysis_cols, selected = analysis_cols)
-    updateSelectizeInput(session, "filter_col", choices = all_ids, selected = NULL)
-  })
-  
+  # 2. UI Updates (The "Happy Bunny" Sidebar Fix)
+  # --- 1. SELECT ALL BUTTON (Strictly Measurements Only) ---
   observeEvent(input$select_all, {
+    req(raw_data()) # Ensure a file exists first
     df <- raw_data()
-    all_ids <- names(df)[-(1:3)]
-    all_labels <- as.character(df[4, -(1:3)])
-    names(all_ids) <- all_labels
-    updateSelectizeInput(session, "selected_cols", selected = all_ids)
+    all_names <- names(df)
+    
+    if(length(all_names) >= 4) {
+      meas_only <- all_names[4:length(all_names)]
+      # This forces the sidebar to grab only the measurements
+      updateSelectizeInput(session, "selected_cols", selected = meas_only)
+    }
   })
   
   observeEvent(input$clear_all, {
     updateSelectizeInput(session, "selected_cols", selected = character(0))
   })
   
+  # --- CLEAR ALL BUTTON ---
+  observeEvent(input$clear_all, {
+    updateSelectizeInput(session, "selected_cols", selected = character(0))
+  })
+  
+  # 3. Process Table Data & Math
+  # --- 2. THE TABLE FIREWALL (Prevents Reappearance & Red Error) ---
+  # --- 3. THE TABLE FIREWALL (Fixes Ghosts & Red Error) ---
   processed_info <- reactive({
     req(raw_data())
     full_df <- raw_data()
-    
-    # --- 1. COLUMN SELECTION ---
     selected_ids <- input$selected_cols
-    all_possible_ids <- names(full_df)
     
-    # If nothing is selected, show everything. Otherwise, use selection.
+    # SHIELD: If sidebar is empty, return NULL to stop the math loop safely
     if (is.null(selected_ids) || length(selected_ids) == 0) {
-      df <- full_df
-    } else {
-      # Keep the original CSV order for the selected columns
-      ordered_selection <- all_possible_ids[all_possible_ids %in% selected_ids]
-      df <- full_df[, ordered_selection, drop = FALSE]
+      return(NULL) 
     }
     
-    # Row 4 is the visual header
-    header_names <- as.character(df[4, ]) 
-    raw_measurements <- df[5:nrow(df), ]
-    if (input$gauge_limit) { raw_measurements <- head(raw_measurements, 50) }
+    # FIREWALL: Strictly only include columns currently tagged in the sidebar
+    df <- full_df[, names(full_df) %in% selected_ids, drop = FALSE]
     
-    stats_list <- list()
-    outlier_map <- list()
+    # Safety exit if subsetting resulted in 0 columns
+    if (ncol(df) == 0) return(NULL)
     
-    # --- 2. THE MATH LOOP (1-to-1 Mapping) ---
+    header_names <- as.character(df[4, ])
+    raw_m <- df[5:nrow(df), ]
+    if (input$gauge_limit) { raw_m <- head(raw_m, 50) }
+    
+    stats_list <- list(); outlier_map <- list()
+    
     for(i in 1:ncol(df)) {
-      col_vals <- suppressWarnings(as.numeric(raw_measurements[, i]))
-      active_vals <- col_vals[!is.na(col_vals)]
-      
-      # Check if the column has numeric data for CPK
-      if(length(active_vals) > 1) {
-        avg_v <- mean(active_vals); sd_v <- sd(active_vals)
-        h_lim <- suppressWarnings(as.numeric(df[1, i]))
-        l_lim <- suppressWarnings(as.numeric(df[2, i]))
-        
-        cpk_l <- if(!is.na(l_lim) && sd_v > 0) (avg_v - l_lim) / (sd_v * 3) else NA
-        cpk_h <- if(!is.na(h_lim) && sd_v > 0) (h_lim - avg_v) / (sd_v * 3) else NA
-        current_cpk <- if(!is.na(cpk_l) || !is.na(cpk_h)) min(cpk_l, cpk_h, na.rm = TRUE) else NA
-        
-        stats_list[[i]] <- list(avg=avg_v, sd=sd_v, cpk=current_cpk)
-        
-        # --- CPK DRIVER HIGHLIGHT ---
-        if(!is.na(current_cpk)) {
-          is_lower_critical <- (!is.na(cpk_l) && (is.na(cpk_h) || cpk_l <= cpk_h))
-          target_idx <- if(is_lower_critical) which.min(col_vals) else which.max(col_vals)
-          
-          if(length(target_idx) > 0) {
-            # Row offset: 6 (Summary/Limits/Header)
-            # Column offset: i (Row_ID is index 0 in DT)
-            outlier_map[[paste0((target_idx[1] - 1) + 6, "-", i)]] <- TRUE
-          }
+      v <- suppressWarnings(as.numeric(raw_m[, i]))
+      act <- v[!is.na(v)]
+      if(length(act) > 1) {
+        avg_v <- mean(act); sd_v <- sd(act)
+        h_l <- suppressWarnings(as.numeric(df[1, i])); l_l <- suppressWarnings(as.numeric(df[2, i]))
+        cpk_l <- if(!is.na(l_l) && sd_v > 0) (avg_v - l_l) / (sd_v * 3) else NA
+        cpk_h <- if(!is.na(h_l) && sd_v > 0) (h_l - avg_v) / (sd_v * 3) else NA
+        c_cpk <- if(!is.na(cpk_l) || !is.na(cpk_h)) min(cpk_l, cpk_h, na.rm = TRUE) else NA
+        stats_list[[i]] <- list(avg=avg_v, sd=sd_v, cpk=c_cpk)
+        if(!is.na(c_cpk) && input$highlight_outliers) {
+          low_c <- (!is.na(cpk_l) && (is.na(cpk_h) || cpk_l <= cpk_h))
+          t_idx <- if(low_c) which.min(v) else which.max(v)
+          outlier_map[[paste0((t_idx[1] - 1) + 6, "-", i)]] <- TRUE
         }
-      } else {
-        stats_list[[i]] <- list(avg=NA, sd=NA, cpk=NA)
-      }
+      } else { stats_list[[i]] <- list(avg=NA, sd=NA, cpk=NA) }
     }
-
-    # --- 3. CLEANED SUMMARY ROWS & LIMIT LABELS ---
+    
+    # 1. Prepare Summary Rows (CPK, St Dev, Average)
     fmt <- function(x) if(is.na(x)) "" else round(x, 4)
+    sum_rows <- rbind(sapply(stats_list, function(x) fmt(x$cpk)),
+                      sapply(stats_list, function(x) fmt(x$sd)),
+                      sapply(stats_list, function(x) fmt(x$avg)))
     
-    # Build stats matrix directly
-    sum_rows <- rbind(
-      sapply(stats_list, function(x) fmt(x$cpk)),
-      sapply(stats_list, function(x) fmt(x$sd)),
-      sapply(stats_list, function(x) fmt(x$avg))
-    )
+    # 2. Prepare Limit Rows (USL, LSL)
+    lim_rows <- unname(as.matrix(df[1:2, , drop = FALSE]))
     
-    # Overwrite the first column of the summary with our clear labels
-    sum_rows[, 1] <- c("CPK", "St Dev", "Average")
+    # 3. Combine them without labels yet
+    math_block <- rbind(sum_rows, lim_rows)
     
-    # Prepare Limit rows and explicitly label them
-    limit_rows <- unname(as.matrix(df[1:2, ]))
-    limit_rows[1, 1] <- "USL"
-    limit_rows[2, 1] <- "LSL"
+    # 4. Create the Row_ID column values
+    # These labels go in the VERY FIRST column (Row_ID)
+    v_ids <- c("CPK", "St Dev", "Average", "USL", "LSL", "Header", 1:nrow(raw_m))
     
-    # --- 4. TABLE ASSEMBLY ---
-    meta_row_count <- 6 # 3 Stats + 2 Limits + 1 Header
-    data_row_count <- nrow(raw_measurements)
-    visual_ids <- c(rep("", meta_row_count), 1:data_row_count)
+    # 5. Build the final table: Row_ID labels + Data columns
+    # We rbind the math, the header (row 4), and the raw measurements
+    data_block <- rbind(math_block, unname(as.matrix(df[4, , drop=F])), unname(as.matrix(raw_m)))
+    final_tab <- cbind(Row_ID = v_ids, data_block)
     
-    final_tab <- rbind(
-      unname(as.matrix(sum_rows)),            # Rows 0-2 in JS
-      limit_rows,                             # Rows 3-4 in JS
-      unname(as.matrix(df[4, , drop=FALSE])), # Row 5 (Header)
-      unname(as.matrix(raw_measurements))     # Row 6+ (Data)
-    )
-    
-    final_tab <- cbind(Row_ID = visual_ids, final_tab)
     colnames(final_tab) <- c("Row_ID", header_names)
     
     return(list(table = final_tab, stats = stats_list, headers = header_names, outliers = outlier_map))
-    
   })
   
-  output$download_excel <- downloadHandler(
-    filename = function() { paste0("Cpk_Report_", Sys.Date(), ".xlsx") },
-    content = function(file) {
-      res <- processed_info()
-      export_df <- as.data.frame(res$table)
-      colnames(export_df) <- res$headers
-      wb <- createWorkbook()
-      addWorksheet(wb, "Cpk Analysis")
-      writeData(wb, "Cpk Analysis", export_df)
-      saveWorkbook(wb, file, overwrite = TRUE)
+  # --- 1. POPULATE ON UPLOAD ---
+  observeEvent(input$file, {
+    df <- raw_data()
+    all_names <- names(df)
+    
+    if (length(all_names) >= 4) {
+      # Measurements start at Index 4
+      meas_cols <- all_names[4:length(all_names)]
+      
+      # FIX 1: Populate the main 'Columns to Analyze' picker
+      updateSelectizeInput(session, "selected_cols", 
+                           choices = all_names, 
+                           selected = meas_cols)
+      
+      # FIX 2: This line brings back your "Filter by Column" dropdown!
+      updateSelectizeInput(session, "filter_col", choices = all_names)
     }
-  )
+  })
+  
+  # 4. Render the Data Table
+  output$table <- renderDT({
+    res <- processed_info()
+    
+    # SHIELD: If nothing is selected, stay clean
+    if (is.null(res)) {
+      return(datatable(matrix(nrow = 0, ncol = 0), 
+                       caption = "Please select columns from the sidebar to begin analysis."))
+    }
+    
+    datatable(res$table, selection = "single", extensions = 'FixedColumns',
+              options = list(
+                scrollX = TRUE, 
+                stateSave = TRUE,
+                pageLength = 100, 
+                # --- THE FIX: ADD SHOW ENTRIES HERE ---
+                lengthMenu = list(c(10, 25, 50, 100, 500, -1), 
+                                  c('10', '25', '50', '100', '500', 'All')),
+                fixedColumns = list(leftColumns = 1),
+                # --------------------------------------
+                rowCallback = JS(sprintf("function(row, data, index) { 
+                   var outE = %s; var outM = %s;
+                   if (index < 5) { $(row).css('font-weight', 'bold'); }
+                   if (index === 0) { 
+                     for (var i = 1; i < data.length; i++) {
+                       var v = parseFloat(data[i]);
+                       if (!isNaN(v)) {
+                         if (v < 1.0) { $('td:eq('+i+')', row).css('background-color', '#ff7f7f'); }
+                         else if (v <= 1.33) { $('td:eq('+i+')', row).css('background-color', '#ffeb9c'); }
+                         else { $('td:eq('+i+')', row).css('background-color', '#c6efce'); }
+                       }
+                     }
+                   }
+                   if (outE && index >= 6) {
+                     for (var i = 1; i < data.length; i++) {
+                       if (outM[(index) + '-' + (i-1)]) {
+                         $('td:eq(' + i + ')', row).css({'background-color': '#ffa500', 'color': 'white', 'font-weight': 'bold'});
+                       }
+                     }
+                   }
+                }", tolower(input$highlight_outliers), jsonlite::toJSON(res$outliers, auto_unbox = TRUE)))
+              ))
+  }, server = FALSE)
+  
+  output$summary <- renderPrint({ req(raw_data()); summary(raw_data()) })
   
   observeEvent(input$table_cell_clicked, {
     click <- input$table_cell_clicked
     req(click, !is.null(click$col)) 
-    if (click$col + 1 >= 4) {
-      show_analysis_modal(click, processed_info(), output)
-    }
+    if (click$col >= 1) { show_analysis_modal(click, processed_info(), output) }
   })
-  
-  output$table <- renderDT({
-    req(processed_info())
-    res <- processed_info()
-    datatable(
-      res$table, 
-      selection = "single", 
-      extensions = 'FixedColumns',
-      options = list(
-        scrollX = TRUE, 
-        lengthMenu = list(c(10, 25, 50, 100, 200, 500, -1), c('10', '25', '50', '100', '200', '500', 'All')),
-        # 3. Use the reactive value here
-        pageLength = current_view_length(), 
-        stateSave = TRUE,
-        stateDuration = -1,
-        fixedColumns = list(leftColumns = 3),
-        rowCallback = JS(sprintf(
-          "function(row, data, index) {
-    var outlierEnabled = %s; 
-    var outlierMap = %s;
-
-    // 1. BOLDING & LABEL STYLING
-    // Bold the entire top 3 Summary rows (CPK, St Dev, Average)
-    if (index < 3) {
-      $(row).css('font-weight', 'bold');
-    }
-    // Bold just the Labels for USL/LSL (Index 3 and 4, first data column td:eq(1))
-    if (index === 3 || index === 4) {
-      $('td:eq(1)', row).css('font-weight', 'bold');
-    }
-
-    // 2. CPK COLOR CODING (Existing Logic)
-    if (index === 0) {
-      for (var i = 3; i < data.length; i++) {
-        var val = parseFloat(data[i]);
-        if (!isNaN(val)) {
-          if (val < 1.0) { $('td:eq('+i+')', row).css('background-color', '#ff7f7f'); }
-          else if (val <= 1.33) { $('td:eq('+i+')', row).css('background-color', '#ffeb9c'); }
-          else { $('td:eq('+i+')', row).css('background-color', '#c6efce'); }
-        }
+  # --- 5. EXPORT TO EXCEL (Clean Labels & Traffic Lights) ---
+  output$download_excel <- downloadHandler(
+    filename = function() {
+      paste0("CPK_Analysis_", Sys.Date(), ".xlsx")
+    },
+    content = function(file) {
+      res <- processed_info()
+      if (is.null(res) || is.null(res$table)) {
+        showNotification("No data selected! Please pick columns before exporting.", type = "error")
+        return()
       }
-    }
-
-    // 3. OUTLIER / CPK DRIVER HIGHLIGHTING (Existing Logic)
-    if (outlierEnabled && index >= 6) {
-      for (var i = 3; i < data.length; i++) {
-        // Note: keeping your i-1 mapping as it currently works for your data structure
-        if (outlierMap[index + '-' + (i-1)]) {
-          $('td:eq(' + i + ')', row).css({'background-color': '#ffa500', 'color': 'white', 'font-weight': 'bold'});
-        }
+      
+      # 1. Prepare Data Frame
+      export_df <- as.data.frame(res$table, stringsAsFactors = FALSE)
+      
+      # FIX: Remove the "Original_CSV_Row" text from the first header cell
+      if (ncol(export_df) > 0) { 
+        colnames(export_df)[1] <- "" 
       }
+      
+      # 2. Create Workbook and add Data
+      wb <- createWorkbook()
+      addWorksheet(wb, "CPK Analysis")
+      writeData(wb, "CPK Analysis", export_df)
+      
+      # 3. Traffic Light Logic for CPK (Excel Row 2)
+      last_col <- ncol(export_df)
+      if (last_col > 1) {
+        cpk_range <- 2:last_col
+        
+        # Red < 1.0
+        negStyle <- createStyle(fontColour = "#9C0006", bgFill = "#FFC7CE")
+        conditionalFormatting(wb, "CPK Analysis", cols = cpk_range, rows = 2, 
+                              rule = "< 1.0", style = negStyle)
+        
+        # Yellow 1.0 to 1.33
+        warnStyle <- createStyle(fontColour = "#9C6500", bgFill = "#FFEB9C")
+        conditionalFormatting(wb, "CPK Analysis", cols = cpk_range, rows = 2, 
+                              rule = "between", type = "expression",
+                              style = warnStyle, expression = c(">= 1.0", "<= 1.33"))
+        
+        # Green > 1.33
+        posStyle <- createStyle(fontColour = "#006100", bgFill = "#C6EFCE")
+        conditionalFormatting(wb, "CPK Analysis", cols = cpk_range, rows = 2, 
+                              rule = "> 1.33", style = posStyle)
+      }
+      
+      # 4. Bold the Math/Spec labels and headers (Rows 1-7)
+      headerStyle <- createStyle(textDecoration = "bold")
+      addStyle(wb, "CPK Analysis", style = headerStyle, rows = 1:7, cols = 1:last_col, gridExpand = TRUE)
+      
+      saveWorkbook(wb, file, overwrite = TRUE)
     }
-  }", 
-          tolower(input$highlight_outliers), 
-          jsonlite::toJSON(res$outliers, auto_unbox = TRUE)
-        ))
-      )
-    )
-  }, server = FALSE)
-  
-  output$summary <- renderPrint({ req(raw_data()); summary(raw_data()) })
+  )
 }
 
 shinyApp(ui, server)
