@@ -10,8 +10,9 @@ library(munsell)
 library(jsonlite)   
 library(openxlsx)   
 
-source("R/modals.R")
-source("R/doc_helper.R")
+# This looks for the file in the current folder OR the R subfolder
+source(if(file.exists("modals.R")) "modals.R" else "R/modals.R")
+source(if(file.exists("doc_helper.R")) "doc_helper.R" else "R/doc_helper.R")
 
 # ==============================================================================
 # UI DEFINITION
