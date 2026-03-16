@@ -42,6 +42,7 @@ ui <- fluidPage(
       checkboxInput("highlight_outliers", "Show Variability Contributor", value = FALSE),
       helpText("Identifies the single measurement in each column that has the greatest negative impact on Cpk."),
       checkboxInput("gauge_limit", "Limit to 50 Rows", FALSE),
+      checkboxInput("gauge_mode", "Gauge measurement coloring", value = FALSE),
       downloadButton("download_excel", "Export to Excel (.xlsx)", class = "btn-success")
     ),
     
@@ -203,8 +204,6 @@ server <- function(input, output, session) {
   # 4. Render the Data Table
   output$table <- renderDT({
     res <- processed_info()
-    
-    # SHIELD: If nothing is selected, stay clean
     if (is.null(res)) {
       return(datatable(matrix(nrow = 0, ncol = 0), 
                        caption = "Please select columns from the sidebar to begin analysis."))
@@ -215,24 +214,30 @@ server <- function(input, output, session) {
                 scrollX = TRUE, 
                 stateSave = TRUE,
                 pageLength = 100, 
-                # --- THE FIX: ADD SHOW ENTRIES HERE ---
                 lengthMenu = list(c(10, 25, 50, 100, 500, -1), 
                                   c('10', '25', '50', '100', '500', 'All')),
                 fixedColumns = list(leftColumns = 1),
-                # --------------------------------------
                 rowCallback = JS(sprintf("function(row, data, index) { 
-                   var outE = %s; var outM = %s;
+                   var outE = %s; var outM = %s; var gaugeMode = %s;
+                   
                    if (index < 5) { $(row).css('font-weight', 'bold'); }
+                   
+                   // CPK COLORING LOGIC (Row Index 0)
                    if (index === 0) { 
                      for (var i = 1; i < data.length; i++) {
                        var v = parseFloat(data[i]);
                        if (!isNaN(v)) {
-                         if (v < 1.0) { $('td:eq('+i+')', row).css('background-color', '#ff7f7f'); }
-                         else if (v <= 1.33) { $('td:eq('+i+')', row).css('background-color', '#ffeb9c'); }
+                         var low = gaugeMode ? 5.0 : 1.0;
+                         var high = gaugeMode ? 8.0 : 1.33;
+                         
+                         if (v < low) { $('td:eq('+i+')', row).css('background-color', '#ff7f7f'); }
+                         else if (v <= high) { $('td:eq('+i+')', row).css('background-color', '#ffeb9c'); }
                          else { $('td:eq('+i+')', row).css('background-color', '#c6efce'); }
                        }
                      }
                    }
+                   
+                   // OUTLIER HIGHLIGHTING
                    if (outE && index >= 6) {
                      for (var i = 1; i < data.length; i++) {
                        if (outM[(index) + '-' + (i-1)]) {
@@ -240,10 +245,12 @@ server <- function(input, output, session) {
                        }
                      }
                    }
-                }", tolower(input$highlight_outliers), jsonlite::toJSON(res$outliers, auto_unbox = TRUE)))
+                }", 
+                                         tolower(input$highlight_outliers), 
+                                         jsonlite::toJSON(res$outliers, auto_unbox = TRUE),
+                                         tolower(input$gauge_mode))) # Pass the new checkbox value here
               ))
   }, server = FALSE)
-  
   output$summary <- renderPrint({ req(raw_data()); summary(raw_data()) })
   
   observeEvent(input$table_cell_clicked, {

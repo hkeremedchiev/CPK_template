@@ -43,7 +43,7 @@ NULL
 #' @section Table Rendering:
 #' 
 #' Injects custom JavaScript into the DataTables display to provide real-time 
-#' visual heatmapping based on $Cpk$ thresholds ($<1.0, 1.0-1.33, >1.33$).
+#' visual heatmapping based on Cpk thresholds ($<1.0, 1.0-1.33, >1.33$).
 #'
 #' @rdname server
 #' @name server
